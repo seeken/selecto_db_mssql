@@ -33,4 +33,8 @@ defmodule SelectoDBMSSQL.AdapterTest do
   test "mssql adapter does not claim stream support" do
     refute SelectoDBMSSQL.Adapter.supports?(:stream)
   end
+
+  test "mssql adapter reports rollup support" do
+    assert SelectoDBMSSQL.Adapter.supports?(:rollup)
+  end
 end
