@@ -39,7 +39,7 @@ defmodule SelectoDBMSSQL.Adapter do
 
   defp execute_direct(connection, query, params, opts) do
     if dependency_available?() do
-      case Tds.query(connection, normalize_query(query), params, opts) do
+      case Tds.query(connection, normalize_query(query), normalize_params(params), opts) do
         {:ok, result} -> {:ok, normalize_result(result)}
         {:error, reason} -> {:error, reason}
       end
@@ -69,6 +69,17 @@ defmodule SelectoDBMSSQL.Adapter do
 
   defp normalize_query(query) when is_binary(query), do: query
   defp normalize_query(query), do: IO.iodata_to_binary(query)
+
+  defp normalize_params(params) when is_list(params) do
+    params
+    |> Enum.with_index(1)
+    |> Enum.map(fn
+      {%Tds.Parameter{} = parameter, _index} -> parameter
+      {value, index} -> %Tds.Parameter{name: "@p#{index}", value: value}
+    end)
+  end
+
+  defp normalize_params(_params), do: []
 
   defp normalize_result(%{rows: rows} = result) do
     columns =
