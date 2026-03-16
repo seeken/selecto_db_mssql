@@ -38,6 +38,47 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert SelectoDBMSSQL.Adapter.supports?(:rollup)
   end
 
+  test "adapter normalizes date and time tuples in result rows" do
+    result = %{
+      rows: [
+        [
+          {{2026, 3, 15}, {14, 30, 45, 123_456}},
+          {{2026, 3, 16}, {9, 5, 7}},
+          {2026, 3, 17},
+          {8, 9, 10}
+        ]
+      ],
+      columns: ["placed_at", "processed_at", "ship_on", "ship_time"]
+    }
+
+    normalized = normalize_result(result)
+
+    assert normalized.rows == [
+             [
+               "2026-03-15T14:30:45.123456",
+               "2026-03-16T09:05:07",
+               "2026-03-17",
+               "08:09:10"
+             ]
+           ]
+
+    assert normalized.columns == ["placed_at", "processed_at", "ship_on", "ship_time"]
+  end
+
+  test "adapter normalizes tuple rows and preserves scalar values" do
+    result = %{
+      rows: [
+        {1, "SO-1001", {{2026, 3, 15}, {14, 30, 45, 0}}, true, nil}
+      ],
+      columns: ["id", "order_number", "placed_at", "active", "notes"]
+    }
+
+    normalized = normalize_result(result)
+
+    assert normalized.rows == [[1, "SO-1001", "2026-03-15T14:30:45.000000", true, nil]]
+    assert normalized.columns == ["id", "order_number", "placed_at", "active", "notes"]
+  end
+
   test "mssql rollup keeps ISO syntax without NULLS FIRST ordering" do
     selecto =
       sales_domain()
@@ -75,5 +116,9 @@ defmodule SelectoDBMSSQL.AdapterTest do
       joins: %{},
       name: "Sales"
     }
+  end
+
+  defp normalize_result(result) do
+    apply(SelectoDBMSSQL.Adapter, :normalize_result, [result])
   end
 end
