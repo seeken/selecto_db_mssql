@@ -74,7 +74,7 @@ defmodule SelectoDBMSSQL.Adapter do
 
   @impl true
   def list_tables(connection, opts \\ []) do
-    schema = Keyword.get(opts, :schema, "dbo")
+    schema = normalize_schema(opts)
 
     query = """
     SELECT TABLE_NAME
@@ -92,7 +92,7 @@ defmodule SelectoDBMSSQL.Adapter do
 
   @impl true
   def introspect_table(connection, table_name, opts \\ []) do
-    schema = Keyword.get(opts, :schema, "dbo")
+    schema = normalize_schema(opts)
     include_associations = Keyword.get(opts, :include_associations, true)
     expand = Keyword.get(opts, :expand, false)
 
@@ -204,6 +204,15 @@ defmodule SelectoDBMSSQL.Adapter do
   defp dependency_available? do
     Code.ensure_loaded?(Tds) and function_exported?(Tds, :start_link, 1) and
       function_exported?(Tds, :query, 4)
+  end
+
+  defp normalize_schema(opts) do
+    case Keyword.get(opts, :schema) do
+      nil -> "dbo"
+      "" -> "dbo"
+      "public" -> "dbo"
+      schema -> schema
+    end
   end
 
   defp introspection_query(%{query_fun: query_fun}, query, params)
