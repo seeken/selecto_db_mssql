@@ -38,6 +38,87 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert SelectoDBMSSQL.Adapter.supports?(:rollup)
   end
 
+  test "mssql adapter reports schema introspection support" do
+    assert SelectoDBMSSQL.Adapter.supports?(:schema_introspection)
+  end
+
+  test "mssql adapter lists tables for selecto_mix generators" do
+    conn =
+      stub_connection(fn query, params, opts ->
+        assert query =~ "INFORMATION_SCHEMA.TABLES"
+        assert params == ["dbo"]
+        assert opts == [prepared: false]
+
+        {:ok, %{rows: [["orders"], ["users"]], columns: ["TABLE_NAME"]}}
+      end)
+
+    assert {:ok, ["orders", "users"]} = SelectoDBMSSQL.Adapter.list_tables(conn, schema: "dbo")
+  end
+
+  test "mssql adapter introspects tables for selecto_mix generators" do
+    conn =
+      stub_connection(fn query, params, _opts ->
+        cond do
+          query =~ "INFORMATION_SCHEMA.COLUMNS" ->
+            assert params == ["sales", "orders"]
+
+            {:ok,
+             %{
+               rows: [
+                 ["id", "int", "NO", nil, nil, 10, 0, nil, 1],
+                 ["account_id", "int", "NO", nil, nil, 10, 0, nil, 2],
+                 ["inserted_at", "datetime2", "YES", nil, nil, nil, nil, 6, 3]
+               ],
+               columns: []
+             }}
+
+          query =~ "CONSTRAINT_TYPE = 'PRIMARY KEY'" ->
+            {:ok, %{rows: [["id"]], columns: []}}
+
+          query =~ "FROM sys.foreign_keys AS fk" and query =~ "SCHEMA_NAME(parent_tbl.schema_id)" ->
+            {:ok,
+             %{
+               rows: [["orders_account_id_fkey", "account_id", "sales", "accounts", "id"]],
+               columns: []
+             }}
+
+          true ->
+            flunk("unexpected query: #{query}")
+        end
+      end)
+
+    assert {:ok, metadata} =
+             SelectoDBMSSQL.Adapter.introspect_table(conn, "orders",
+               schema: "sales",
+               expand: false
+             )
+
+    assert metadata.table_name == "orders"
+    assert metadata.schema == "sales"
+    assert metadata.fields == [:id, :account_id, :inserted_at]
+    assert metadata.field_types.id == :integer
+    assert metadata.field_types.inserted_at == :naive_datetime
+    assert metadata.primary_key == :id
+    assert metadata.source == :mssql
+
+    assert metadata.associations == %{
+             account: %{
+               association_type: :belongs_to,
+               constraint_name: "orders_account_id_fkey",
+               field: :account,
+               is_through: false,
+               join_type: :inner,
+               owner_key: :account_id,
+               queryable: :accounts,
+               related_key: :id,
+               related_module_name: "Account",
+               related_schema: "Account",
+               related_table: "accounts",
+               type: :belongs_to
+             }
+           }
+  end
+
   test "adapter normalizes date and time tuples in result rows" do
     result = %{
       rows: [
@@ -121,4 +202,6 @@ defmodule SelectoDBMSSQL.AdapterTest do
   defp normalize_result(result) do
     apply(SelectoDBMSSQL.Adapter, :normalize_result, [result])
   end
+
+  defp stub_connection(query_fun), do: %{query_fun: query_fun}
 end
