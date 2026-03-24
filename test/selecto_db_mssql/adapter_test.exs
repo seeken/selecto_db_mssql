@@ -42,6 +42,11 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert SelectoDBMSSQL.Adapter.supports?(:schema_introspection)
   end
 
+  test "mssql adapter reports apply-based lateral join support" do
+    assert SelectoDBMSSQL.Adapter.supports?(:lateral_join)
+    assert SelectoDBMSSQL.Adapter.supports?(:apply_join)
+  end
+
   test "mssql adapter lists tables for selecto_mix generators" do
     conn =
       stub_connection(fn query, params, opts ->

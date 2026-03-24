@@ -66,6 +66,8 @@ defmodule SelectoDBMSSQL.Adapter do
       :window_functions,
       :transactions,
       :rollup,
+      :lateral_join,
+      :apply_join,
       :offset_fetch_pagination,
       :requires_order_for_pagination,
       :schema_introspection
