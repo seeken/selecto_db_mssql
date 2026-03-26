@@ -47,6 +47,11 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert SelectoDBMSSQL.Adapter.supports?(:apply_join)
   end
 
+  test "mssql adapter reports output-based write projection support" do
+    assert SelectoDBMSSQL.Adapter.supports?(:returning)
+    assert SelectoDBMSSQL.Adapter.supports?(:output)
+  end
+
   test "mssql adapter lists tables for selecto_mix generators" do
     conn =
       stub_connection(fn query, params, opts ->

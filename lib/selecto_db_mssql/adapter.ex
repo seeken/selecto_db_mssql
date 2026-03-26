@@ -63,6 +63,8 @@ defmodule SelectoDBMSSQL.Adapter do
   def supports?(feature) do
     feature in [
       :cte,
+      :returning,
+      :output,
       :window_functions,
       :transactions,
       :rollup,
@@ -400,12 +402,29 @@ defmodule SelectoDBMSSQL.Adapter do
     params
     |> Enum.with_index(1)
     |> Enum.map(fn
-      {%Tds.Parameter{} = parameter, _index} -> parameter
-      {value, index} -> %Tds.Parameter{name: "@p#{index}", value: value}
+      {%Tds.Parameter{} = parameter, index} -> normalize_tds_parameter(parameter, index)
+      {value, index} -> %Tds.Parameter{name: "@p#{index}", value: normalize_param_value(value)}
     end)
   end
 
   defp normalize_params(_params), do: []
+
+  defp normalize_tds_parameter(%Tds.Parameter{} = parameter, index) do
+    parameter
+    |> Map.put_new(:name, "@p#{index}")
+    |> Map.update!(:value, &normalize_param_value/1)
+    |> normalize_tds_parameter_type()
+  end
+
+  defp normalize_param_value(true), do: 1
+  defp normalize_param_value(false), do: 0
+  defp normalize_param_value(value), do: value
+
+  defp normalize_tds_parameter_type(%Tds.Parameter{type: :boolean} = parameter) do
+    %{parameter | type: :integer}
+  end
+
+  defp normalize_tds_parameter_type(parameter), do: parameter
 
   defp build_associations(foreign_keys) do
     Enum.into(foreign_keys, %{}, fn foreign_key ->
