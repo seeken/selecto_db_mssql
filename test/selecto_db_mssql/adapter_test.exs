@@ -52,6 +52,12 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert SelectoDBMSSQL.Adapter.supports?(:output)
   end
 
+  test "mssql adapter does not claim text search or rank support" do
+    refute SelectoDBMSSQL.Adapter.supports?(:text_search)
+    refute SelectoDBMSSQL.Adapter.supports?(:text_search_multi_field)
+    refute SelectoDBMSSQL.Adapter.supports?(:text_search_rank)
+  end
+
   test "mssql adapter lists tables for selecto_mix generators" do
     conn =
       stub_connection(fn query, params, opts ->
