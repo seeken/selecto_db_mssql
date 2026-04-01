@@ -71,6 +71,21 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert {:ok, ["orders", "users"]} = SelectoDBMSSQL.Adapter.list_tables(conn, schema: "dbo")
   end
 
+  test "mssql adapter lists relations including views when requested" do
+    conn =
+      stub_connection(fn query, params, opts ->
+        assert query =~ "TABLE_TYPE IN ('BASE TABLE', 'VIEW')"
+        assert params == ["dbo"]
+        assert opts == [prepared: false]
+
+        {:ok, %{rows: [["orders", "table"], ["active_orders", "view"]], columns: []}}
+      end)
+
+    assert {:ok,
+            [%{name: "orders", source_kind: :table}, %{name: "active_orders", source_kind: :view}]} =
+             SelectoDBMSSQL.Adapter.list_relations(conn, schema: "dbo", include_views: true)
+  end
+
   test "mssql adapter introspects tables for selecto_mix generators" do
     conn =
       stub_connection(fn query, params, _opts ->

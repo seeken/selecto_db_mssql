@@ -95,6 +95,46 @@ defmodule SelectoDBMSSQL.Adapter do
   end
 
   @impl true
+  def list_relations(connection, opts \\ []) do
+    schema = normalize_schema(opts)
+    include_views = Keyword.get(opts, :include_views, false)
+
+    query =
+      if include_views do
+        """
+        SELECT TABLE_NAME,
+               CASE TABLE_TYPE
+                 WHEN 'BASE TABLE' THEN 'table'
+                 WHEN 'VIEW' THEN 'view'
+               END AS source_kind
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = @p1
+          AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+        ORDER BY TABLE_NAME
+        """
+      else
+        """
+        SELECT TABLE_NAME, 'table' AS source_kind
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = @p1
+          AND TABLE_TYPE = 'BASE TABLE'
+        ORDER BY TABLE_NAME
+        """
+      end
+
+    case introspection_query(connection, query, [schema]) do
+      {:ok, %{rows: rows}} ->
+        {:ok,
+         Enum.map(rows, fn [table_name, source_kind] ->
+           %{name: table_name, source_kind: normalize_relation_source_kind(source_kind)}
+         end)}
+
+      {:error, reason} ->
+        {:error, {:query_failed, reason}}
+    end
+  end
+
+  @impl true
   def introspect_table(connection, table_name, opts \\ []) do
     schema = normalize_schema(opts)
     include_associations = Keyword.get(opts, :include_associations, true)
@@ -218,6 +258,10 @@ defmodule SelectoDBMSSQL.Adapter do
       schema -> schema
     end
   end
+
+  defp normalize_relation_source_kind("table"), do: :table
+  defp normalize_relation_source_kind("view"), do: :view
+  defp normalize_relation_source_kind(other), do: other
 
   defp introspection_query(%{query_fun: query_fun}, query, params)
        when is_function(query_fun, 3) do
