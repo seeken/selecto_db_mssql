@@ -27,7 +27,6 @@ defmodule SelectoDBMSSQL.MixProject do
   defp deps do
     [
       selecto_dep(),
-      selecto_components_dep(),
       {:tds, "~> 2.3"},
       {:ex_doc, "~> 0.29", only: :dev, runtime: false}
     ]
@@ -45,14 +44,6 @@ defmodule SelectoDBMSSQL.MixProject do
     case System.get_env("SELECTO_ECOSYSTEM_USE_LOCAL") do
       value when value in ["1", "true", "TRUE", "yes", "YES", "on", "ON"] -> true
       _ -> false
-    end
-  end
-
-  defp selecto_components_dep do
-    if use_local_ecosystem?() do
-      {:selecto_components, path: "../selecto_components", only: :test}
-    else
-      {:selecto_components, github: "seeken/selecto_components", branch: "main", only: :test}
     end
   end
 
