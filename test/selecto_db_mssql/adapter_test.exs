@@ -1,6 +1,8 @@
 defmodule SelectoDBMSSQL.AdapterTest do
   use ExUnit.Case, async: true
 
+  alias Selecto.Write.{AdapterConformance, Batch, Command, Preview}
+
   test "adapter exposes the selecto adapter contract" do
     assert Code.ensure_loaded?(SelectoDBMSSQL.Adapter)
     assert function_exported?(SelectoDBMSSQL.Adapter, :name, 0)
@@ -9,11 +11,20 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert function_exported?(SelectoDBMSSQL.Adapter, :placeholder, 1)
     assert function_exported?(SelectoDBMSSQL.Adapter, :quote_identifier, 1)
     assert function_exported?(SelectoDBMSSQL.Adapter, :supports?, 1)
+    assert function_exported?(SelectoDBMSSQL.Adapter, :transaction, 3)
   end
 
   test "mssql adapter reports expected placeholder and quoting strategy" do
     assert SelectoDBMSSQL.Adapter.placeholder(3) |> IO.iodata_to_binary() == "@p3"
     assert SelectoDBMSSQL.Adapter.quote_identifier("order") == "[order]"
+  end
+
+  test "normalizes command results whose driver columns are nil" do
+    assert SelectoDBMSSQL.Adapter.normalize_result(%{rows: nil, columns: nil, num_rows: 0}) == %{
+             rows: [],
+             columns: [],
+             num_rows: 0
+           }
   end
 
   test "mssql adapter rejects invalid connection options" do
@@ -50,6 +61,82 @@ defmodule SelectoDBMSSQL.AdapterTest do
   test "mssql adapter reports output-based write projection support" do
     assert SelectoDBMSSQL.Adapter.supports?(:returning)
     assert SelectoDBMSSQL.Adapter.supports?(:output)
+  end
+
+  test "advertises the complete versioned portable-write contract" do
+    capabilities = SelectoDBMSSQL.Adapter.write_capabilities(:unused)
+
+    assert capabilities.protocol_version == Selecto.Write.Capabilities.protocol_version()
+    assert capabilities.insert
+    assert capabilities.update
+    assert capabilities.upsert
+    assert capabilities.delete
+    assert capabilities.returning
+    assert capabilities.generated_keys == :output
+    assert capabilities.atomic_batch
+    assert capabilities.write_graph
+    assert capabilities.merge
+    assert capabilities.merge_strategy == :holdlock
+  end
+
+  test "previews native OUTPUT clauses and a parameterized HOLDLOCK MERGE" do
+    insert = %{command!(:insert) | returning: [:id, :name]}
+
+    assert {:ok, %Preview{statements: [%{text: insert_sql, params: ["value"]}]}} =
+             SelectoDBMSSQL.Adapter.preview_write(:unused, insert, [])
+
+    assert insert_sql ==
+             "INSERT INTO [items] ([name]) OUTPUT INSERTED.[id], INSERTED.[name] VALUES (@p1)"
+
+    upsert =
+      command!(:upsert,
+        assignments: [
+          %{field: :id, value: {:literal, 7}},
+          %{field: :name, value: {:literal, "updated"}}
+        ],
+        returning: [:id],
+        metadata: %{conflict_target: [:id], upsert_update_fields: [:name]}
+      )
+
+    assert {:ok, %Preview{statements: [%{text: merge_sql, params: [7, "updated"]}]}} =
+             SelectoDBMSSQL.Adapter.preview_write(:unused, upsert, [])
+
+    assert merge_sql =~ "MERGE INTO [items] WITH (HOLDLOCK) AS target"
+    assert merge_sql =~ "ON target.[id] = source.[id]"
+    assert merge_sql =~ "WHEN MATCHED THEN UPDATE SET target.[name] = source.[name]"
+    assert merge_sql =~ "WHEN NOT MATCHED THEN INSERT ([id], [name])"
+    assert merge_sql =~ "OUTPUT INSERTED.[id];"
+  end
+
+  test "uses SQL Server placeholders for atomic foreign-key guards" do
+    guarded =
+      command!(:insert,
+        assignments: [
+          %{field: :tenant_id, value: {:literal, 45}},
+          %{field: :project_id, value: {:literal, 7}}
+        ],
+        metadata: %{
+          foreign_key_guards: [
+            %{field: :project_id, relation: :projects, target_field: :id}
+          ]
+        }
+      )
+
+    assert {:ok, %Preview{statements: [%{text: sql, params: [45, 7, 7]}]}} =
+             SelectoDBMSSQL.Adapter.preview_write(:unused, guarded, [])
+
+    assert sql =~ "[id] = @p3"
+    refute sql =~ "?"
+  end
+
+  test "passes reusable write preview conformance including atomic batches" do
+    selecto = %Selecto{adapter: SelectoDBMSSQL.Adapter, connection: :unused}
+
+    assert {:ok, report} = AdapterConformance.check(selecto)
+    assert report.operations == [:insert, :update, :upsert, :delete]
+
+    assert {:ok, batch} = Batch.new([command!(:insert), command!(:delete)])
+    assert {:ok, %Preview{metadata: %{atomic?: true}}} = Selecto.Write.preview(selecto, batch)
   end
 
   test "mssql adapter does not claim text search or rank support" do
@@ -235,4 +322,23 @@ defmodule SelectoDBMSSQL.AdapterTest do
   end
 
   defp stub_connection(query_fun), do: %{query_fun: query_fun}
+
+  defp command!(operation, overrides \\ []) do
+    defaults = %{
+      operation: operation,
+      relation: :items,
+      assignments: [%{field: :name, value: {:literal, "value"}}],
+      predicate: if(operation in [:update, :delete], do: {:eq, {:field, :id}, {:literal, 1}}),
+      expected_cardinality: {:exactly, 1},
+      returning: :none,
+      metadata:
+        if(operation == :upsert,
+          do: %{conflict_target: [:name], upsert_update_fields: [:name]},
+          else: %{}
+        )
+    }
+
+    {:ok, command} = Command.new(Map.merge(defaults, Map.new(overrides)))
+    command
+  end
 end

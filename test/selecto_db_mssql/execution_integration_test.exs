@@ -109,7 +109,7 @@ defmodule SelectoDBMSSQL.ExecutionIntegrationTest do
       hostname: env("SELECTO_MSSQL_HOST", "localhost"),
       port: env_int("SELECTO_MSSQL_PORT", 1433),
       username: env("SELECTO_MSSQL_USER", "sa"),
-      password: env("SELECTO_MSSQL_PASSWORD", "StrongPass123!"),
+      password: System.fetch_env!("SELECTO_MSSQL_PASSWORD"),
       database: env("SELECTO_MSSQL_DATABASE", "master"),
       ssl: false
     ]

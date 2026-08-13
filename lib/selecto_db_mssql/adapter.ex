@@ -4,6 +4,7 @@ defmodule SelectoDBMSSQL.Adapter do
   """
 
   @behaviour Selecto.DB.Adapter
+  @behaviour Selecto.DB.WriteAdapter
 
   @missing_dependency {:adapter_dependency_missing, :tds}
 
@@ -75,6 +76,18 @@ defmodule SelectoDBMSSQL.Adapter do
       :schema_introspection
     ]
   end
+
+  @impl Selecto.DB.WriteAdapter
+  defdelegate write_capabilities(connection), to: SelectoDBMSSQL.WriteExecutor
+
+  @impl Selecto.DB.WriteAdapter
+  defdelegate preview_write(connection, write, opts), to: SelectoDBMSSQL.WriteExecutor
+
+  @impl Selecto.DB.WriteAdapter
+  defdelegate execute_write(connection, write, opts), to: SelectoDBMSSQL.WriteExecutor
+
+  @impl true
+  defdelegate transaction(connection, fun, opts), to: SelectoDBMSSQL.WriteExecutor
 
   @impl true
   def list_tables(connection, opts \\ []) do
@@ -705,11 +718,13 @@ defmodule SelectoDBMSSQL.Adapter do
     columns =
       result
       |> Map.get(:columns, [])
+      |> Kernel.||([])
       |> Enum.map(&normalize_column_name/1)
 
     %{
       rows: normalize_rows(rows || []),
-      columns: columns
+      columns: columns,
+      num_rows: Map.get(result, :num_rows, length(rows || []))
     }
   end
 
