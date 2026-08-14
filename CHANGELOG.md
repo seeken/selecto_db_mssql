@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 - 2026-08-14
+
+- Normalize the custom O'Saasy Hex metadata to `LicenseRef-O-Saasy`; the
+  packaged license text and licensing terms are unchanged.
+- Raised the Selecto baseline to `0.5.0` and implemented the explicit runtime,
+  normalized result/error/type, and SQL Server-owned dialect-fragment ports.
+- Unsupported PostgreSQL-shaped features now fail with structured capability
+  evidence instead of inheriting core fallback SQL.
+- SQL Server now owns portable datetime-format and case-insensitive comparison
+  rendering and explicitly rejects unsupported timezone/epoch conversion.
+
 ## 0.2.0 - 2026-08-12
 
 - Added the versioned Selecto portable write contract with `@pN` parameters,

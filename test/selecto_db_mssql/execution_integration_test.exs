@@ -48,6 +48,70 @@ defmodule SelectoDBMSSQL.ExecutionIntegrationTest do
     end)
   end
 
+  @tag :mssql
+  test "mssql adapter executes introspection and rollup capabilities" do
+    with_mssql_connection(fn conn ->
+      table_name = "selecto_mssql_contract_#{System.unique_integer([:positive])}"
+      quoted_table = SelectoDBMSSQL.Adapter.quote_identifier(table_name)
+
+      assert {:ok, _result} =
+               SelectoDBMSSQL.Adapter.execute(
+                 conn,
+                 "CREATE TABLE [dbo].#{quoted_table} ([id] INT NOT NULL PRIMARY KEY, [bucket] NVARCHAR(40) NULL)",
+                 [],
+                 []
+               )
+
+      try do
+        assert {:ok, _result} =
+                 SelectoDBMSSQL.Adapter.execute(
+                   conn,
+                   "INSERT INTO [dbo].#{quoted_table} ([id], [bucket]) VALUES (1, 'a'), (2, 'b')",
+                   [],
+                   []
+                 )
+
+        assert {:ok, tables} = SelectoDBMSSQL.Adapter.list_tables(conn, schema: "dbo")
+        assert table_name in tables
+
+        assert {:ok, relations} =
+                 SelectoDBMSSQL.Adapter.list_relations(conn,
+                   schema: "dbo",
+                   include_views: true
+                 )
+
+        assert Enum.any?(relations, &(&1 == %{name: table_name, source_kind: :table}))
+
+        assert {:ok, metadata} =
+                 SelectoDBMSSQL.Adapter.introspect_table(conn, table_name,
+                   schema: "dbo",
+                   expand: false
+                 )
+
+        assert metadata.primary_key == :id
+        assert metadata.field_types.bucket == :string
+        assert metadata.source == :mssql
+
+        assert {:ok, %{rows: rollup_rows}} =
+                 SelectoDBMSSQL.Adapter.execute(
+                   conn,
+                   "SELECT [bucket], COUNT(*) FROM [dbo].#{quoted_table} GROUP BY ROLLUP([bucket])",
+                   [],
+                   []
+                 )
+
+        assert length(rollup_rows) == 3
+      after
+        SelectoDBMSSQL.Adapter.execute(
+          conn,
+          "DROP TABLE IF EXISTS [dbo].#{quoted_table}",
+          [],
+          []
+        )
+      end
+    end)
+  end
+
   defp with_mssql_connection(fun) when is_function(fun, 1) do
     case connect_with_retry(fn -> SelectoDBMSSQL.Adapter.connect(mssql_opts()) end) do
       {:ok, conn} ->

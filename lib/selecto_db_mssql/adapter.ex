@@ -12,6 +12,46 @@ defmodule SelectoDBMSSQL.Adapter do
   def name, do: :mssql
 
   @impl true
+  def dialect, do: SelectoDBMSSQL.Dialect
+
+  @impl true
+  def capability(feature), do: %{feature: feature, supported?: supports?(feature)}
+
+  @impl true
+  def normalize_type(type) when is_binary(type) do
+    case type |> String.trim() |> String.downcase() do
+      value when value in ["tinyint", "smallint", "int", "bigint"] -> :integer
+      value when value in ["real", "float"] -> :float
+      value when value in ["decimal", "numeric", "money", "smallmoney"] -> :decimal
+      value when value in ["char", "nchar", "varchar", "nvarchar", "text", "ntext"] -> :string
+      "bit" -> :boolean
+      "date" -> :date
+      "time" -> :time
+      value when value in ["datetime", "datetime2", "smalldatetime"] -> :naive_datetime
+      "datetimeoffset" -> :utc_datetime
+      "uniqueidentifier" -> :uuid
+      value when value in ["binary", "varbinary", "image"] -> :binary
+      _unknown -> type
+    end
+  end
+
+  def normalize_type(type), do: Selecto.TypeSystem.normalize_type(type)
+
+  @impl true
+  def type_family(type), do: type |> normalize_type() |> Selecto.TypeFamily.of()
+
+  @impl true
+  def normalize_execution_result(%{rows: rows, columns: columns} = result) do
+    {:ok, %{result | rows: rows || [], columns: Enum.map(columns || [], &to_string/1)}}
+  end
+
+  def normalize_execution_result(result), do: {:error, {:invalid_adapter_result, result}}
+
+  @impl true
+  def normalize_error(%Selecto.Error{} = error), do: error
+  def normalize_error(reason), do: Selecto.Error.from_reason(reason)
+
+  @impl true
   def connect(connection) when is_pid(connection) or is_atom(connection), do: {:ok, connection}
   def connect(opts) when is_map(opts), do: connect(Map.to_list(opts))
 
@@ -27,6 +67,14 @@ defmodule SelectoDBMSSQL.Adapter do
   end
 
   def connect(other), do: {:error, {:invalid_connection_options, other}}
+
+  @impl true
+  def disconnect(connection) when is_pid(connection) do
+    if Process.alive?(connection), do: GenServer.stop(connection)
+    :ok
+  end
+
+  def disconnect(_connection), do: :ok
 
   @impl true
   def execute(connection, query, params, opts) do
@@ -59,6 +107,9 @@ defmodule SelectoDBMSSQL.Adapter do
   end
 
   def quote_identifier(identifier), do: identifier |> to_string() |> quote_identifier()
+
+  @impl true
+  def rollup_sql(grouped_clauses), do: ["ROLLUP( ", grouped_clauses, " )"]
 
   @impl true
   def supports?(feature) do
