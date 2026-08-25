@@ -196,8 +196,23 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
 
       graph = graph!(root, child)
 
-      assert {:ok, %Result{operation: :graph, affected_rows: 2, rows: [root_row]}} =
+      assert {:ok,
+              %Result{
+                operation: :graph,
+                affected_rows: 2,
+                rows: [root_row],
+                metadata: %{
+                  nested_outcomes: [
+                    %{path: [:children, 0], operation: :create, identity: %{"id" => child_id}}
+                  ],
+                  identity_mappings: [
+                    %{client_identity: "child-1", identity: %{"id" => mapped_child_id}}
+                  ]
+                }
+              }} =
                Adapter.execute_write(fixture.conn, graph, [])
+
+      assert mapped_child_id == child_id
 
       root_id = fetch_field!(root_row, :id)
 
@@ -246,6 +261,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
         path: [:children],
         relation: child.relation,
         strategy: :ordered,
+        identity_fields: [:id],
         rows: [
           %Row{
             id: "child",
@@ -258,7 +274,8 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
                 from_row: "root",
                 from_field: :id
               }
-            ]
+            ],
+            metadata: %{client_identity: "child-1", semantic_operation: :create}
           }
         ]
       }

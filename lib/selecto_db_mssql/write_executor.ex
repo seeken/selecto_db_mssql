@@ -140,7 +140,9 @@ defmodule SelectoDBMSSQL.WriteExecutor do
            operation: :graph,
            affected_rows: affected,
            rows: Materializer.root_rows(graph, results),
-           metadata: %{dialect: :mssql, atomic?: true, node_strategies: Map.new(strategies)}
+           metadata:
+             %{dialect: :mssql, atomic?: true, node_strategies: Map.new(strategies)}
+             |> Map.merge(Materializer.outcome_metadata(graph, results))
          }}
 
       error ->
