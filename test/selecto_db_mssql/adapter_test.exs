@@ -75,6 +75,7 @@ defmodule SelectoDBMSSQL.AdapterTest do
     assert capabilities.generated_keys == :output
     assert capabilities.atomic_batch
     assert capabilities.write_graph
+    refute capabilities.prepared_candidate_state
     assert capabilities.merge
     assert capabilities.merge_strategy == :holdlock
   end

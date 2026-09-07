@@ -17,6 +17,7 @@ defmodule SelectoDBMSSQL.WriteExecutor do
       transactions: true,
       atomic_batch: true,
       write_graph: true,
+      prepared_candidate_state: false,
       dialect: :mssql,
       server_version: server_version(connection),
       merge: true,
