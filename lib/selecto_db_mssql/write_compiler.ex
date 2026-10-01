@@ -99,7 +99,12 @@ defmodule SelectoDBMSSQL.WriteCompiler do
          :ok <- require_assignments(assignments, :update),
          {:ok, predicate} <-
            compile_predicate(command.predicate, opts, assignment_parameter_count(assignments)),
-         {:ok, guards} <- compile_foreign_key_guards(command.metadata, assignments),
+         {:ok, guards} <-
+           compile_foreign_key_guards(
+             command.metadata,
+             assignments,
+             assignment_parameter_count(assignments) + length(predicate.params)
+           ),
          {:ok, returning} <- compile_returning(command.returning, :inserted) do
       {columns, values, assignment_params} = assignment_parts(assignments)
       set = Enum.zip_with(columns, values, &"#{&1} = #{&2}") |> Enum.join(", ")
@@ -107,7 +112,7 @@ defmodule SelectoDBMSSQL.WriteCompiler do
       guard_text =
         case guards.text do
           nil -> ""
-          text -> " AND " <> renumber(text, length(predicate.params))
+          text -> " AND " <> text
         end
 
       {:ok,
@@ -258,33 +263,40 @@ defmodule SelectoDBMSSQL.WriteCompiler do
     end
   end
 
-  defp compile_foreign_key_guards(metadata, assignments) do
+  # A guard proves the referenced row exists. A guard that names
+  # `tenant_field` must also carry `tenant_value`; the referenced row must then
+  # belong to that tenant. Its columns are qualified by a subquery alias so a
+  # column missing from the referenced relation fails instead of resolving to
+  # the outer write target. Placeholders are numbered from `offset` (every
+  # parameter that precedes the guard) instead of being renumbered as text,
+  # which would also rewrite placeholder-like text inside quoted names.
+  defp compile_foreign_key_guards(metadata, assignments, offset \\ nil) do
     metadata
     |> Map.get(:foreign_key_guards, [])
-    |> Enum.reduce_while({:ok, [], [], assignment_parameter_count(assignments)}, fn guard,
-                                                                                    {:ok, texts,
-                                                                                     params,
-                                                                                     offset} ->
-      with %{field: field, relation: relation, target_field: target_field} <- guard,
-           %{params: [value]} <-
-             Enum.find(assignments, &(to_string(&1.field) == to_string(field))),
-           true <- valid_ref?(relation) and valid_ref?(target_field) do
-        text =
-          "EXISTS (SELECT 1 FROM #{quote_relation(relation)} WHERE " <>
-            "#{quote_identifier(target_field)} = @p#{offset + 1})"
+    |> Enum.reduce_while(
+      {:ok, [], [], offset || assignment_parameter_count(assignments)},
+      fn guard, {:ok, texts, params, offset} ->
+        with %{field: field, relation: relation, target_field: target_field} <- guard,
+             %{params: [value]} <-
+               Enum.find(assignments, &(to_string(&1.field) == to_string(field))),
+             true <- valid_ref?(relation) and valid_ref?(target_field),
+             {:ok, tenant} <- foreign_key_guard_tenant(guard) do
+          {text, guard_params} =
+            foreign_key_guard_text(relation, target_field, value, tenant, offset)
 
-        {:cont, {:ok, [text | texts], params ++ [value], offset + 1}}
-      else
-        _ ->
-          {:halt,
-           {:error,
-            Error.new(
-              :invalid_foreign_key_guard,
-              "foreign-key guard must reference an assigned scalar value",
-              details: %{guard: guard}
-            )}}
+          {:cont, {:ok, [text | texts], params ++ guard_params, offset + length(guard_params)}}
+        else
+          _ ->
+            {:halt,
+             {:error,
+              Error.new(
+                :invalid_foreign_key_guard,
+                "foreign-key guard must reference an assigned scalar value",
+                details: %{guard: guard}
+              )}}
+        end
       end
-    end)
+    )
     |> case do
       {:ok, [], [], _offset} ->
         {:ok, %{text: nil, params: []}}
@@ -295,6 +307,32 @@ defmodule SelectoDBMSSQL.WriteCompiler do
       error ->
         error
     end
+  end
+
+  defp foreign_key_guard_tenant(guard) do
+    case {Map.fetch(guard, :tenant_field), Map.get(guard, :tenant_value)} do
+      {:error, _value} ->
+        {:ok, nil}
+
+      {{:ok, tenant_field}, tenant_value} when not is_nil(tenant_value) ->
+        if valid_ref?(tenant_field), do: {:ok, {tenant_field, tenant_value}}, else: :error
+
+      _invalid ->
+        :error
+    end
+  end
+
+  defp foreign_key_guard_text(relation, target_field, value, nil, offset) do
+    {"EXISTS (SELECT 1 FROM #{quote_relation(relation)} WHERE " <>
+       "#{quote_identifier(target_field)} = @p#{offset + 1})", [value]}
+  end
+
+  defp foreign_key_guard_text(relation, target_field, value, {tenant_field, tenant}, offset) do
+    alias_name = quote_identifier("selecto_fk_parent")
+
+    {"EXISTS (SELECT 1 FROM #{quote_relation(relation)} AS #{alias_name} " <>
+       "WHERE #{alias_name}.#{quote_identifier(target_field)} = @p#{offset + 1} " <>
+       "AND #{alias_name}.#{quote_identifier(tenant_field)} = @p#{offset + 2})", [value, tenant]}
   end
 
   defp compile_predicate_list([], _separator, _opts, _offset),
@@ -402,12 +440,6 @@ defmodule SelectoDBMSSQL.WriteCompiler do
   defp cast_assignment(text, _field, _opts), do: text
 
   defp parameter(value, offset), do: {:ok, %{text: "@p#{offset + 1}", params: [value]}}
-
-  defp renumber(text, delta) do
-    Regex.replace(~r/@p(\d+)/, text, fn _whole, number ->
-      "@p#{String.to_integer(number) + delta}"
-    end)
-  end
 
   defp map_commands(commands, fun) do
     Enum.reduce_while(commands, {:ok, []}, fn command, {:ok, statements} ->

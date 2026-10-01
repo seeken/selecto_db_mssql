@@ -49,7 +49,40 @@ defmodule SelectoDBMSSQL.Adapter do
 
   @impl true
   def normalize_error(%Selecto.Error{} = error), do: error
+
+  # Server messages quote key values, object names and the server name. Only
+  # a stable category and the numeric server code leave the read path.
+  def normalize_error(%Tds.Error{mssql: %{number: number} = mssql}) when is_integer(number) do
+    Selecto.Error.query_error("SQL Server rejected the statement", nil, [], %{
+      adapter: :mssql,
+      category: mssql_error_category(number, Map.get(mssql, :msg_text) || ""),
+      code: number
+    })
+  end
+
+  def normalize_error(%Tds.Error{}) do
+    Selecto.Error.query_error("SQL Server query failed", nil, [], %{
+      adapter: :mssql,
+      category: :database_error
+    })
+  end
+
+  def normalize_error(%DBConnection.ConnectionError{}) do
+    Selecto.Error.connection_error("SQL Server connection failed", %{
+      adapter: :mssql,
+      category: :connection_error
+    })
+  end
+
   def normalize_error(reason), do: Selecto.Error.from_reason(reason)
+
+  defp mssql_error_category(number, _text) when number in [2601, 2627], do: :unique_violation
+  defp mssql_error_category(515, _text), do: :not_null_violation
+
+  defp mssql_error_category(547, text),
+    do: if(text =~ "CHECK constraint", do: :check_violation, else: :foreign_key_violation)
+
+  defp mssql_error_category(_number, _text), do: :database_error
 
   @impl true
   def connect(connection) when is_pid(connection) or is_atom(connection), do: {:ok, connection}
