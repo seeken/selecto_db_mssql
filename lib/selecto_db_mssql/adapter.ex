@@ -1,6 +1,12 @@
 defmodule SelectoDBMSSQL.Adapter do
   @moduledoc """
   Microsoft SQL Server adapter for Selecto backed by `Tds`.
+
+  Writes reach this adapter through the governed entry point, `SelectoUpdato`.
+  `execute_write/3` refuses a write without the `Selecto.Write.Authorization`
+  issued for exactly that payload (`:ungoverned_write`).
+  `execute_write_unsafe/3` skips that check and exists for trusted tooling and
+  adapter tests only.
   """
 
   @behaviour Selecto.DB.Adapter
@@ -167,8 +173,29 @@ defmodule SelectoDBMSSQL.Adapter do
   @impl Selecto.DB.WriteAdapter
   defdelegate preview_write(connection, write, opts), to: SelectoDBMSSQL.WriteExecutor
 
+  @doc """
+  Executes a governed write.
+
+  `opts[:authorization]` must be the `Selecto.Write.Authorization` that the
+  governed entry point (`SelectoUpdato`) issued for exactly this command,
+  batch, or graph. Without it the write fails with `:ungoverned_write` before
+  any statement runs.
+  """
   @impl Selecto.DB.WriteAdapter
-  defdelegate execute_write(connection, write, opts), to: SelectoDBMSSQL.WriteExecutor
+  def execute_write(connection, write, opts) do
+    with :ok <- Selecto.Write.Authorization.require_for(write, opts) do
+      execute_write_unsafe(connection, write, opts)
+    end
+  end
+
+  @doc """
+  Executes a write without domain governance.
+
+  For trusted tooling and adapter tests only; application code writes through
+  `SelectoUpdato`.
+  """
+  @impl Selecto.DB.WriteAdapter
+  defdelegate execute_write_unsafe(connection, write, opts), to: SelectoDBMSSQL.WriteExecutor
 
   @impl true
   defdelegate transaction(connection, fun, opts), to: SelectoDBMSSQL.WriteExecutor

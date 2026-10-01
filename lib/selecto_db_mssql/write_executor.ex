@@ -32,13 +32,13 @@ defmodule SelectoDBMSSQL.WriteExecutor do
   def preview_write(_connection, %Graph{} = graph, opts), do: preview_graph(graph, opts)
   def preview_write(_connection, write, _opts), do: invalid_write_input(write)
 
-  def execute_write(connection, %Command{} = command, opts) do
+  def execute_write_unsafe(connection, %Command{} = command, opts) do
     with :ok <- Command.validate(command) do
       with_transaction(connection, fn tx -> execute_command(tx, command, opts) end)
     end
   end
 
-  def execute_write(connection, %Batch{} = batch, opts) do
+  def execute_write_unsafe(connection, %Batch{} = batch, opts) do
     with :ok <- Batch.validate(batch) do
       with_transaction(connection, fn tx ->
         Enum.reduce_while(batch.commands, {:ok, []}, fn command, {:ok, results} ->
@@ -51,13 +51,13 @@ defmodule SelectoDBMSSQL.WriteExecutor do
     end
   end
 
-  def execute_write(connection, %Graph{} = graph, opts) do
+  def execute_write_unsafe(connection, %Graph{} = graph, opts) do
     with :ok <- Graph.validate(graph) do
       with_transaction(connection, fn tx -> execute_graph(tx, graph, opts) end)
     end
   end
 
-  def execute_write(_connection, write, _opts), do: invalid_write_input(write)
+  def execute_write_unsafe(_connection, write, _opts), do: invalid_write_input(write)
 
   def transaction(connection, fun, _opts) when is_function(fun, 1) do
     connection = resolve_connection(connection)

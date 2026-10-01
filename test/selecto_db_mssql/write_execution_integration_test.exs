@@ -14,7 +14,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
       assert Adapter.write_capabilities(fixture.conn).server_version =~ ~r/^\d+\.\d+/
 
       assert {:ok, %Result{affected_rows: 1, rows: [inserted]}} =
-               Adapter.execute_write(
+               Adapter.execute_write_unsafe(
                  fixture.conn,
                  command!(:insert, fixture.items,
                    assignments: [
@@ -38,7 +38,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
          ]}
 
       assert {:ok, %Result{affected_rows: 1, rows: [updated]}} =
-               Adapter.execute_write(
+               Adapter.execute_write_unsafe(
                  fixture.conn,
                  command!(:update, fixture.items,
                    assignments: [assignment(:name, "tenant-updated")],
@@ -51,7 +51,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
       assert fetch_field!(updated, :name) == "tenant-updated"
 
       assert {:error, %Error{type: :cardinality_mismatch, details: %{actual: 0}}} =
-               Adapter.execute_write(
+               Adapter.execute_write_unsafe(
                  fixture.conn,
                  command!(:update, fixture.items,
                    assignments: [assignment(:name, "cross-tenant")],
@@ -83,7 +83,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
         )
 
       assert {:ok, %Result{affected_rows: 1, rows: [merged_insert]}} =
-               Adapter.execute_write(fixture.conn, upsert, [])
+               Adapter.execute_write_unsafe(fixture.conn, upsert, [])
 
       merge_id = fetch_field!(merged_insert, :id)
       assert fetch_field!(merged_insert, :name) == "merged-created"
@@ -97,13 +97,13 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
         end)
 
       assert {:ok, %Result{affected_rows: 1, rows: [merged_update]}} =
-               Adapter.execute_write(fixture.conn, changed, [])
+               Adapter.execute_write_unsafe(fixture.conn, changed, [])
 
       assert fetch_field!(merged_update, :id) == merge_id
       assert fetch_field!(merged_update, :name) == "merged-updated"
 
       assert {:error, %Error{type: :cardinality_mismatch, details: %{actual: 0}}} =
-               Adapter.execute_write(
+               Adapter.execute_write_unsafe(
                  fixture.conn,
                  command!(:insert, fixture.items,
                    assignments: [
@@ -135,7 +135,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
          ]}
 
       assert {:ok, %Result{operation: :delete, affected_rows: 1, rows: [deleted]}} =
-               Adapter.execute_write(
+               Adapter.execute_write_unsafe(
                  fixture.conn,
                  command!(:delete, fixture.items,
                    assignments: [],
@@ -169,7 +169,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
       {:ok, batch} = Batch.new([first, fails_cardinality])
 
       assert {:error, %Error{type: :cardinality_mismatch}} =
-               Adapter.execute_write(fixture.conn, batch, [])
+               Adapter.execute_write_unsafe(fixture.conn, batch, [])
 
       assert scalar!(
                fixture.conn,
@@ -210,7 +210,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
                   ]
                 }
               }} =
-               Adapter.execute_write(fixture.conn, graph, [])
+               Adapter.execute_write_unsafe(fixture.conn, graph, [])
 
       assert mapped_child_id == child_id
 
@@ -236,7 +236,7 @@ defmodule SelectoDBMSSQL.WriteExecutionIntegrationTest do
       bad_child = %{child | assignments: [assignment(:name, nil)]}
 
       assert {:error, %Error{type: :execution_failed}} =
-               Adapter.execute_write(fixture.conn, graph!(bad_root, bad_child), [])
+               Adapter.execute_write_unsafe(fixture.conn, graph!(bad_root, bad_child), [])
 
       assert scalar!(
                fixture.conn,

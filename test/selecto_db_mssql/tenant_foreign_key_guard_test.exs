@@ -60,24 +60,24 @@ defmodule SelectoDBMSSQL.TenantForeignKeyGuardTest do
   test "a tenant-7 write cannot reference tenant 8's parent" do
     with_fixture(fn %{conn: conn, projects: projects, tasks: tasks} ->
       assert {:error, %Error{type: :cardinality_mismatch, details: %{actual: 0}}} =
-               Adapter.execute_write(conn, insert!(projects, tasks, 80, "inserted"), [])
+               Adapter.execute_write_unsafe(conn, insert!(projects, tasks, 80, "inserted"), [])
 
       assert {:error, %Error{type: :cardinality_mismatch, details: %{actual: 0}}} =
-               Adapter.execute_write(conn, update!(projects, tasks, 80, "updated"), [])
+               Adapter.execute_write_unsafe(conn, update!(projects, tasks, 80, "updated"), [])
 
       assert {:error, %Error{type: :cardinality_mismatch, details: %{actual: 0}}} =
-               Adapter.execute_write(conn, upsert!(projects, tasks, 80, "upserted"), [])
+               Adapter.execute_write_unsafe(conn, upsert!(projects, tasks, 80, "upserted"), [])
 
       assert task_rows(conn, tasks) == [[1, 7, 70, "seed"]]
 
       assert {:ok, %Result{affected_rows: 1}} =
-               Adapter.execute_write(conn, insert!(projects, tasks, 70, "inserted"), [])
+               Adapter.execute_write_unsafe(conn, insert!(projects, tasks, 70, "inserted"), [])
 
       assert {:ok, %Result{affected_rows: 1}} =
-               Adapter.execute_write(conn, update!(projects, tasks, 70, "updated"), [])
+               Adapter.execute_write_unsafe(conn, update!(projects, tasks, 70, "updated"), [])
 
       assert {:ok, %Result{affected_rows: 1}} =
-               Adapter.execute_write(conn, upsert!(projects, tasks, 70, "upserted"), [])
+               Adapter.execute_write_unsafe(conn, upsert!(projects, tasks, 70, "upserted"), [])
 
       assert task_rows(conn, tasks) == [
                [1, 7, 70, "updated"],
