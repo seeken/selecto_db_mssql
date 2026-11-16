@@ -1,5 +1,7 @@
 # SelectoDBMSSQL
 
+> Legacy package frozen. See [the migration notice](MIGRATION.md) for the separate, unreleased SQL Server adapter.
+
 Microsoft SQL Server adapter package for the Selecto ecosystem.
 
 This package provides `SelectoDBMSSQL.Adapter`, an external adapter module for
